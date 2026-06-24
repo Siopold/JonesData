@@ -293,6 +293,40 @@ INDESIGN_SCRIPT_BODY = r"""
         app.changeGrepPreferences = NothingEnum.nothing;
     }
 
+    // ── Parenthetical-only mode ───────────────────────────────────────────────
+    // Two GREP passes:
+    //   1. Hide everything that is not a parenthesis or paragraph break.
+    //   2. Restore visibility for each (…) group, parens included.
+    // Nested parens produce two separate visible groups; single-level parens
+    // (the literary norm) are handled perfectly.
+    if (PAREN_ONLY_MODE) {
+        var pInvisStyle = doc.characterStyles.add();
+        pInvisStyle.name = "Invisible";
+        pInvisStyle.fillColor = doc.swatches.itemByName("Paper");
+
+        var pVisStyle = doc.characterStyles.add();
+        pVisStyle.name = "Visible";
+        pVisStyle.fillColor = doc.swatches.itemByName("Black");
+
+        // Step 1 — hide everything that isn't a paren or paragraph separator.
+        app.findGrepPreferences   = NothingEnum.nothing;
+        app.changeGrepPreferences = NothingEnum.nothing;
+        app.findGrepPreferences.findWhat = "[^()\\r]+";
+        app.changeGrepPreferences.appliedCharacterStyle = pInvisStyle;
+        doc.changeGrep();
+        app.findGrepPreferences   = NothingEnum.nothing;
+        app.changeGrepPreferences = NothingEnum.nothing;
+
+        // Step 2 — restore each (…) group including its parentheses.
+        app.findGrepPreferences   = NothingEnum.nothing;
+        app.changeGrepPreferences = NothingEnum.nothing;
+        app.findGrepPreferences.findWhat = "\\([^()\\r]*\\)";
+        app.changeGrepPreferences.appliedCharacterStyle = pVisStyle;
+        doc.changeGrep();
+        app.findGrepPreferences   = NothingEnum.nothing;
+        app.changeGrepPreferences = NothingEnum.nothing;
+    }
+
     // Pad to complete 8-page signatures
     var sigs   = Math.ceil(doc.pages.length / 8);
     var target = sigs * 8;
@@ -401,17 +435,24 @@ class TypesetterApp:
 
         self.go_full_btn = self._lbl_btn(
             go_row, "Typeset Full Text", BTN_DIS,
-            lambda: self._convert(punct_only=False),
+            lambda: self._convert(mode="full"),
             font=("Helvetica", 11, "bold"), padx=8, pady=10
         )
-        self.go_full_btn.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 4))
+        self.go_full_btn.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 3))
 
         self.go_punct_btn = self._lbl_btn(
             go_row, "Punctuation Only", BTN_DIS,
-            lambda: self._convert(punct_only=True),
+            lambda: self._convert(mode="punct"),
             font=("Helvetica", 11, "bold"), padx=8, pady=10
         )
-        self.go_punct_btn.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(4, 0))
+        self.go_punct_btn.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(3, 3))
+
+        self.go_paren_btn = self._lbl_btn(
+            go_row, "Parenthetical Only", BTN_DIS,
+            lambda: self._convert(mode="paren"),
+            font=("Helvetica", 11, "bold"), padx=8, pady=10
+        )
+        self.go_paren_btn.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(3, 0))
 
         # Status
         self.status_var = tk.StringVar(value="Ready – select a .txt or .docx file.")
@@ -486,11 +527,12 @@ class TypesetterApp:
         self.default_btn.config(bg=BTN_DIS)
         self.go_full_btn.config(bg=BTN_ACT)
         self.go_punct_btn.config(bg=BTN_ACT)
+        self.go_paren_btn.config(bg=BTN_ACT)
         self.status_var.set(f"Ready to typeset: {name}")
 
     # ── InDesign conversion ───────────────────────────────────────────────────
 
-    def _convert(self, punct_only: bool = False) -> None:
+    def _convert(self, mode: str = "full") -> None:
         if not self._file_path:
             messagebox.showerror("No file", "Please select a file first.")
             return
@@ -501,7 +543,8 @@ class TypesetterApp:
         jsx_path = self._file_path.replace("\\", "/").replace('"', '\\"')
         jsx_content = (
             f'var INPUT_FILE_PATH = "{jsx_path}";\n'
-            f'var PUNCT_ONLY_MODE = {"true" if punct_only else "false"};\n'
+            f'var PUNCT_ONLY_MODE = {"true" if mode == "punct" else "false"};\n'
+            f'var PAREN_ONLY_MODE = {"true" if mode == "paren" else "false"};\n'
             + INDESIGN_SCRIPT_BODY
         )
 
