@@ -254,6 +254,45 @@ INDESIGN_SCRIPT_BODY = r"""
         safety++;
     }
 
+    // ── Punctuation-only mode ─────────────────────────────────────────────────
+    // Apply Paper (white) color to every word character (\w = letters, digits,
+    // underscore) so they become invisible against the white page.  Punctuation
+    // and whitespace are untouched: punctuation stays black, whitespace keeps its
+    // exact typeset width — so the layout is perfectly preserved and only the
+    // punctuation shows.  Uses InDesign's GREP Find/Change for speed.
+    if (PUNCT_ONLY_MODE) {
+        var invisStyle = doc.characterStyles.add();
+        invisStyle.name = "Invisible";
+        invisStyle.fillColor = doc.swatches.itemByName("Paper");
+
+        // Step 1 — hide the abbreviation period after English honorifics and
+        // titles (Mr. Mrs. Dr. etc.).  These periods mark abbreviations, not
+        // sentence endings, so they should vanish with the letters.
+        // Pattern matches the title word + its trailing period; we then hide
+        // only the final character (the period) of each match.
+        var TITLE_RE = "(?i)\\b(Mr|Mrs|Ms|Mme|Mlle|Dr|Prof|Rev|Hon|Ven|" +
+                       "Gen|Col|Maj|Capt|Lt|Cmdr|Adm|Sgt|Cpl|Pvt|Pfc|" +
+                       "Gov|Sen|Rep|Pres|Amb|" +
+                       "Jr|Sr|Esq|St|Fr|Br|Msgr|Insp|Det)\\.";
+        app.findGrepPreferences = NothingEnum.nothing;
+        app.findGrepPreferences.findWhat = TITLE_RE;
+        var titleMatches = doc.findGrep();
+        app.findGrepPreferences = NothingEnum.nothing;
+        for (var ti = 0; ti < titleMatches.length; ti++) {
+            var m = titleMatches[ti];
+            m.characters.item(m.characters.length - 1).appliedCharacterStyle = invisStyle;
+        }
+
+        // Step 2 — hide all word characters (letters, digits, underscore).
+        app.findGrepPreferences   = NothingEnum.nothing;
+        app.changeGrepPreferences = NothingEnum.nothing;
+        app.findGrepPreferences.findWhat = "\\w+";
+        app.changeGrepPreferences.appliedCharacterStyle = invisStyle;
+        doc.changeGrep();
+        app.findGrepPreferences   = NothingEnum.nothing;
+        app.changeGrepPreferences = NothingEnum.nothing;
+    }
+
     // Pad to complete 8-page signatures
     var sigs   = Math.ceil(doc.pages.length / 8);
     var target = sigs * 8;
@@ -364,16 +403,29 @@ class TypesetterApp:
             wraplength=468, anchor=tk.W, justify=tk.LEFT
         ).pack(anchor=tk.W, pady=(2, 12))
 
-        # Convert button
-        self.go_btn = tk.Button(
-            body, text="Create InDesign File",
-            font=("Helvetica", 12, "bold"),
+        # Typeset action buttons
+        go_row = tk.Frame(body, bg=BG)
+        go_row.pack(fill=tk.X, pady=(0, 8))
+
+        self.go_full_btn = tk.Button(
+            go_row, text="Typeset Full Text",
+            font=("Helvetica", 11, "bold"),
             bg=BTN_DIS, fg="white", relief=tk.FLAT,
-            padx=16, pady=10, state=tk.DISABLED,
+            padx=8, pady=10, state=tk.DISABLED,
             activebackground="#5C1010", activeforeground="white",
-            cursor="hand2", command=self._convert
+            cursor="hand2", command=lambda: self._convert(punct_only=False)
         )
-        self.go_btn.pack(fill=tk.X, pady=(0, 8))
+        self.go_full_btn.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 4))
+
+        self.go_punct_btn = tk.Button(
+            go_row, text="Punctuation Only",
+            font=("Helvetica", 11, "bold"),
+            bg=BTN_DIS, fg="white", relief=tk.FLAT,
+            padx=8, pady=10, state=tk.DISABLED,
+            activebackground="#5C1010", activeforeground="white",
+            cursor="hand2", command=lambda: self._convert(punct_only=True)
+        )
+        self.go_punct_btn.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(4, 0))
 
         # Status
         self.status_var = tk.StringVar(value="Ready – select a .txt or .docx file.")
@@ -435,12 +487,13 @@ class TypesetterApp:
         name = os.path.basename(path)
         self.path_var.set(path)
         self.drop_label.config(text=f"✓  {name}", fg=ACCENT)
-        self.go_btn.config(state=tk.NORMAL, bg=BTN_ACT)
+        self.go_full_btn.config(state=tk.NORMAL, bg=BTN_ACT)
+        self.go_punct_btn.config(state=tk.NORMAL, bg=BTN_ACT)
         self.status_var.set(f"Ready to typeset: {name}")
 
     # ── InDesign conversion ───────────────────────────────────────────────────
 
-    def _convert(self) -> None:
+    def _convert(self, punct_only: bool = False) -> None:
         if not self._file_path:
             messagebox.showerror("No file", "Please select a file first.")
             return
@@ -448,9 +501,12 @@ class TypesetterApp:
             messagebox.showerror("Not found", f"File not found:\n{self._file_path}")
             return
 
-        # Embed file path as a JS variable before the main script body
         jsx_path = self._file_path.replace("\\", "/").replace('"', '\\"')
-        jsx_content = f'var INPUT_FILE_PATH = "{jsx_path}";\n' + INDESIGN_SCRIPT_BODY
+        jsx_content = (
+            f'var INPUT_FILE_PATH = "{jsx_path}";\n'
+            f'var PUNCT_ONLY_MODE = {"true" if punct_only else "false"};\n'
+            + INDESIGN_SCRIPT_BODY
+        )
 
         # Write to a temp file that InDesign will read
         tmp = tempfile.NamedTemporaryFile(suffix=".jsx", delete=False,
