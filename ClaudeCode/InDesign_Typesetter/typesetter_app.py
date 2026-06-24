@@ -158,7 +158,23 @@ INDESIGN_SCRIPT_BODY = r"""
         textFile.open("r");
         var rawText = textFile.read();
         textFile.close();
-        firstFrame.contents = rawText;
+
+        // Plain-text files are often soft-wrapped: each visual line ends with
+        // \n but a real paragraph break is a blank line (\n\n or more).
+        // Passing the raw text to InDesign would turn every soft-wrap into a
+        // paragraph break, producing very short ragged lines.
+        // Fix: normalise line endings, split on blank lines to find real
+        // paragraph boundaries, join within-paragraph newlines as spaces,
+        // then reassemble with InDesign's paragraph separator (\r).
+        rawText = rawText.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
+        var paras = rawText.split(/\n{2,}/);
+        var cleaned = [];
+        for (var i = 0; i < paras.length; i++) {
+            var p = paras[i].replace(/\n/g, " ").replace(/  +/g, " ");
+            p = p.replace(/^\s+/, "").replace(/\s+$/, "");
+            if (p.length > 0) cleaned.push(p);
+        }
+        firstFrame.contents = cleaned.join("\r");
     } else {
         firstFrame.place(textFile);
     }
