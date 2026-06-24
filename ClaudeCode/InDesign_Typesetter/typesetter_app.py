@@ -375,23 +375,15 @@ class TypesetterApp:
         btn_row = tk.Frame(zone_frame, bg=BG)
         btn_row.pack(pady=(8, 0))
 
-        browse_btn = tk.Button(
-            btn_row, text="Browse…",
-            font=("Helvetica", 10), bg=BTN_PRI, fg="white",
-            relief=tk.FLAT, padx=12, pady=4,
-            activebackground=ACCENT, activeforeground="white",
-            cursor="hand2", command=self._browse
-        )
-        browse_btn.pack(side=tk.LEFT, padx=(0, 8))
+        # tk.Label instead of tk.Button — macOS Tk overrides custom bg on
+        # Button widgets; Label always renders the exact color we specify.
+        self.browse_btn = self._lbl_btn(btn_row, "Browse…", BTN_ACT,
+                                        self._browse, padx=12, pady=4)
+        self.browse_btn.pack(side=tk.LEFT, padx=(0, 8))
 
-        default_btn = tk.Button(
-            btn_row, text="Use Default File",
-            font=("Helvetica", 10), bg=BTN_PRI, fg="white",
-            relief=tk.FLAT, padx=12, pady=4,
-            activebackground=ACCENT, activeforeground="white",
-            cursor="hand2", command=self._use_default
-        )
-        default_btn.pack(side=tk.LEFT)
+        self.default_btn = self._lbl_btn(btn_row, "Use Default File", BTN_ACT,
+                                         self._use_default, padx=12, pady=4)
+        self.default_btn.pack(side=tk.LEFT)
 
         # Selected path display
         tk.Label(body, text="Selected file:", font=("Helvetica", 9),
@@ -403,27 +395,21 @@ class TypesetterApp:
             wraplength=468, anchor=tk.W, justify=tk.LEFT
         ).pack(anchor=tk.W, pady=(2, 12))
 
-        # Typeset action buttons
+        # Typeset action buttons — start muted, turn red once a file is chosen
         go_row = tk.Frame(body, bg=BG)
         go_row.pack(fill=tk.X, pady=(0, 8))
 
-        self.go_full_btn = tk.Button(
-            go_row, text="Typeset Full Text",
-            font=("Helvetica", 11, "bold"),
-            bg=BTN_DIS, fg="white", relief=tk.FLAT,
-            padx=8, pady=10, state=tk.DISABLED,
-            activebackground="#5C1010", activeforeground="white",
-            cursor="hand2", command=lambda: self._convert(punct_only=False)
+        self.go_full_btn = self._lbl_btn(
+            go_row, "Typeset Full Text", BTN_DIS,
+            lambda: self._convert(punct_only=False),
+            font=("Helvetica", 11, "bold"), padx=8, pady=10
         )
         self.go_full_btn.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 4))
 
-        self.go_punct_btn = tk.Button(
-            go_row, text="Punctuation Only",
-            font=("Helvetica", 11, "bold"),
-            bg=BTN_DIS, fg="white", relief=tk.FLAT,
-            padx=8, pady=10, state=tk.DISABLED,
-            activebackground="#5C1010", activeforeground="white",
-            cursor="hand2", command=lambda: self._convert(punct_only=True)
+        self.go_punct_btn = self._lbl_btn(
+            go_row, "Punctuation Only", BTN_DIS,
+            lambda: self._convert(punct_only=True),
+            font=("Helvetica", 11, "bold"), padx=8, pady=10
         )
         self.go_punct_btn.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(4, 0))
 
@@ -444,6 +430,15 @@ class TypesetterApp:
             ),
             font=("Helvetica", 8), fg=FG_FAINT, bg=BG, justify=tk.LEFT
         ).pack(anchor=tk.W, pady=(12, 0))
+
+    # ── Label-based button helper ─────────────────────────────────────────────
+
+    def _lbl_btn(self, parent, text, bg, command, font=("Helvetica", 10), **kw):
+        """tk.Label styled as a button. Unlike tk.Button, macOS respects bg."""
+        lbl = tk.Label(parent, text=text, font=font, fg="white", bg=bg,
+                       cursor="hand2", **kw)
+        lbl.bind("<Button-1>", lambda _e: command())
+        return lbl
 
     # ── Drag-and-drop (tkinterdnd2 if available) ──────────────────────────────
 
@@ -487,8 +482,10 @@ class TypesetterApp:
         name = os.path.basename(path)
         self.path_var.set(path)
         self.drop_label.config(text=f"✓  {name}", fg=ACCENT)
-        self.go_full_btn.config(state=tk.NORMAL, bg=BTN_ACT)
-        self.go_punct_btn.config(state=tk.NORMAL, bg=BTN_ACT)
+        self.browse_btn.config(bg=BTN_DIS)
+        self.default_btn.config(bg=BTN_DIS)
+        self.go_full_btn.config(bg=BTN_ACT)
+        self.go_punct_btn.config(bg=BTN_ACT)
         self.status_var.set(f"Ready to typeset: {name}")
 
     # ── InDesign conversion ───────────────────────────────────────────────────
