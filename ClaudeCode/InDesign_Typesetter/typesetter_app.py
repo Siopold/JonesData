@@ -89,7 +89,7 @@ INDESIGN_SCRIPT_BODY = r"""
     applyBaskerville(bodyStyle, 12);
     bodyStyle.leading      = 15;
     bodyStyle.justification = Justification.LEFT_ALIGN;
-    bodyStyle.spaceAfter   = 6;   // 6pt gap between prose paragraphs
+    bodyStyle.spaceAfter   = 15;  // one line's worth of space between paragraphs
 
     // Poetry lines are kept as individual InDesign paragraphs (line breaks
     // preserved) with no extra space between them. The LAST line of each
@@ -174,6 +174,7 @@ INDESIGN_SCRIPT_BODY = r"""
         // Normalise line endings, then split on blank lines to find real
         // paragraph / stanza boundaries.
         rawText = rawText.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
+        rawText = rawText.replace(/--/g, "—");  // double hyphen → em dash
         var sections = rawText.split(/\n{2,}/);
 
         // For each blank-line-separated block decide whether it is:
