@@ -121,16 +121,23 @@ INDESIGN_SCRIPT_BODY = r"""
     addPageNumberFrame(rectoMaster, PAGE_W);  // right page: shift x by 6"
 
     // ── Text Frame Bounds by Page Number ─────────────────────────────────
-    // We track the page number with a counter (starting at 1) rather than
-    // relying on page.side or page.documentOffset, which behave inconsistently
-    // across InDesign versions when pages are added dynamically.
+    // Facing-pages documents use SPREAD-relative coordinates for all page
+    // items — the same rule that applies to master pages.
     //
-    // Odd page  = recto (right): inside margin on LEFT  → left=1",  right=5.25"
-    // Even page = verso (left):  outside margin on LEFT → left=0.75", right=5.0"
+    // Page 1 (recto) is alone in spread 1: the spread is only 6" wide, so
+    // x = 0–6" covers the whole page and no offset is needed.
+    //
+    // Pages 2+ live in two-page spreads (12" wide):
+    //   Even pages (verso) = left half,  x = 0–6"   → no offset
+    //   Odd pages  (recto) = right half, x = 6–12"  → +6" x offset
+    //
+    // Without the offset, recto frames (pages 3, 5, 7 …) land in the left
+    // half of their spread and stack on top of the preceding verso frame.
     function boundsForPageNum(n) {
+        var xOff = (n % 2 === 1 && n > 1) ? 6 : 0;
         return (n % 2 === 0)
-            ? ["0.75in", "0.75in", "8.25in", "5.0in"]    // verso
-            : ["0.75in", "1.0in",  "8.25in", "5.25in"];  // recto
+            ? ["0.75in", (0.75 + xOff) + "in", "8.25in", (5.0  + xOff) + "in"]  // verso
+            : ["0.75in", (1.0  + xOff) + "in", "8.25in", (5.25 + xOff) + "in"]; // recto
     }
 
     // ── Place Text and Auto-flow ──────────────────────────────────────────
