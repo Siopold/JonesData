@@ -89,7 +89,9 @@ INDESIGN_SCRIPT_BODY = r"""
     applyBaskerville(bodyStyle, 12);
     bodyStyle.leading      = 15;
     bodyStyle.justification = Justification.LEFT_ALIGN;
-    bodyStyle.spaceAfter   = 15;  // one line's worth of space between paragraphs
+    bodyStyle.spaceAfter   = "15pt";  // one line's worth of space (explicit pts —
+                                      // bare numbers follow document units, which
+                                      // are picas by default, not points)
 
     // Poetry lines are kept as individual InDesign paragraphs (line breaks
     // preserved) with no extra space between them. The LAST line of each
@@ -188,8 +190,11 @@ INDESIGN_SCRIPT_BODY = r"""
         var paraStyles   = [];  // parallel: which style to apply
 
         for (var si = 0; si < sections.length; si++) {
-            var section = sections[si].replace(/^\s+/, "").replace(/\s+$/, "");
-            if (!section) continue;
+            // Trim only trailing whitespace. Do NOT trim leading whitespace:
+            // the first line of a poetry block may start with spaces/tabs that
+            // mark it as verse, and stripping them would wipe that indentation.
+            var section = sections[si].replace(/\s+$/, "");
+            if (section.replace(/\s/g, "").length === 0) continue;
 
             var lines = section.split("\n");
 
@@ -273,11 +278,15 @@ INDESIGN_SCRIPT_BODY = r"""
 
 # ── Python GUI ────────────────────────────────────────────────────────────────
 
-ACCENT   = "#2c3e50"
-BTN_BLUE = "#2980b9"
-BTN_GRN  = "#27ae60"
-BTN_DIS  = "#95a5a6"
-BG       = "#f5f5f0"
+BG        = "#F0EAE2"   # warm Nordic cream/linen
+ZONE_BG   = "#E4DDD5"   # slightly deeper cream for the drop zone interior
+ACCENT    = "#8B1A1A"   # deep Scandinavian barn red (header, active convert)
+BTN_PRI   = "#A52020"   # medium red (Browse, Use Default)
+BTN_ACT   = "#8B1A1A"   # deep red (Convert when a file is loaded)
+BTN_DIS   = "#7A5555"   # muted dark mauve (Convert when disabled; white text ~6:1)
+FG_DARK   = "#2E2322"   # near-black charcoal (primary text)
+FG_MID    = "#6B4F4F"   # secondary labels
+FG_FAINT  = "#9C7E7E"   # spec/hint text
 
 
 class TypesetterApp:
@@ -310,36 +319,48 @@ class TypesetterApp:
         # Drop / select zone
         zone_frame = tk.LabelFrame(
             body, text="  Document  ", font=("Helvetica", 10),
-            bg=BG, padx=10, pady=10
+            bg=BG, fg=FG_DARK, padx=10, pady=10
         )
         zone_frame.pack(fill=tk.X, pady=(0, 14))
 
         self.drop_label = tk.Label(
             zone_frame,
             text="Drag a file here  –or–  click Browse",
-            font=("Helvetica", 10), fg="#888", bg="#eae8e0",
+            font=("Helvetica", 10), fg=FG_MID, bg=ZONE_BG,
             relief=tk.FLAT, bd=0, pady=22, padx=10,
             cursor="hand2"
         )
         self.drop_label.pack(fill=tk.X)
         self.drop_label.bind("<Button-1>", lambda _e: self._browse())
 
+        btn_row = tk.Frame(zone_frame, bg=BG)
+        btn_row.pack(pady=(8, 0))
+
         browse_btn = tk.Button(
-            zone_frame, text="Browse…",
-            font=("Helvetica", 10), bg=BTN_BLUE, fg="white",
+            btn_row, text="Browse…",
+            font=("Helvetica", 10), bg=BTN_PRI, fg="white",
             relief=tk.FLAT, padx=12, pady=4,
-            activebackground="#1a6fa3", activeforeground="white",
+            activebackground=ACCENT, activeforeground="white",
             cursor="hand2", command=self._browse
         )
-        browse_btn.pack(pady=(8, 0))
+        browse_btn.pack(side=tk.LEFT, padx=(0, 8))
+
+        default_btn = tk.Button(
+            btn_row, text="Use Default File",
+            font=("Helvetica", 10), bg=BTN_PRI, fg="white",
+            relief=tk.FLAT, padx=12, pady=4,
+            activebackground=ACCENT, activeforeground="white",
+            cursor="hand2", command=self._use_default
+        )
+        default_btn.pack(side=tk.LEFT)
 
         # Selected path display
         tk.Label(body, text="Selected file:", font=("Helvetica", 9),
-                 fg="#555", bg=BG).pack(anchor=tk.W)
+                 fg=FG_MID, bg=BG).pack(anchor=tk.W)
         self.path_var = tk.StringVar(value="(none)")
         tk.Label(
             body, textvariable=self.path_var,
-            font=("Courier", 9), fg="#333", bg=BG,
+            font=("Courier", 9), fg=FG_DARK, bg=BG,
             wraplength=468, anchor=tk.W, justify=tk.LEFT
         ).pack(anchor=tk.W, pady=(2, 12))
 
@@ -349,7 +370,7 @@ class TypesetterApp:
             font=("Helvetica", 12, "bold"),
             bg=BTN_DIS, fg="white", relief=tk.FLAT,
             padx=16, pady=10, state=tk.DISABLED,
-            activebackground="#1e8449", activeforeground="white",
+            activebackground="#5C1010", activeforeground="white",
             cursor="hand2", command=self._convert
         )
         self.go_btn.pack(fill=tk.X, pady=(0, 8))
@@ -358,7 +379,7 @@ class TypesetterApp:
         self.status_var = tk.StringVar(value="Ready – select a .txt or .docx file.")
         tk.Label(
             body, textvariable=self.status_var,
-            font=("Helvetica", 9), fg="#777", bg=BG,
+            font=("Helvetica", 9), fg=FG_MID, bg=BG,
             wraplength=468, justify=tk.LEFT
         ).pack(anchor=tk.W)
 
@@ -369,7 +390,7 @@ class TypesetterApp:
                 "Specs: 6\"×9\" pages · Facing · Baskerville 12 pt · "
                 "Margins T/B/Out 0.75\" / In 1\" · Bleed 0.125\""
             ),
-            font=("Helvetica", 8), fg="#aaa", bg=BG, justify=tk.LEFT
+            font=("Helvetica", 8), fg=FG_FAINT, bg=BG, justify=tk.LEFT
         ).pack(anchor=tk.W, pady=(12, 0))
 
     # ── Drag-and-drop (tkinterdnd2 if available) ──────────────────────────────
@@ -402,6 +423,10 @@ class TypesetterApp:
         if path:
             self._set_file(path)
 
+    def _use_default(self) -> None:
+        script_dir = os.path.dirname(os.path.abspath(__file__))
+        self._set_file(os.path.join(script_dir, "default.txt"))
+
     def _set_file(self, path: str) -> None:
         if not os.path.isfile(path):
             messagebox.showerror("Not found", f"Cannot locate:\n{path}")
@@ -409,8 +434,8 @@ class TypesetterApp:
         self._file_path = path
         name = os.path.basename(path)
         self.path_var.set(path)
-        self.drop_label.config(text=f"✓  {name}", fg="#1e8449")
-        self.go_btn.config(state=tk.NORMAL, bg=BTN_GRN)
+        self.drop_label.config(text=f"✓  {name}", fg=ACCENT)
+        self.go_btn.config(state=tk.NORMAL, bg=BTN_ACT)
         self.status_var.set(f"Ready to typeset: {name}")
 
     # ── InDesign conversion ───────────────────────────────────────────────────
