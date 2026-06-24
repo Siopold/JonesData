@@ -89,6 +89,18 @@ INDESIGN_SCRIPT_BODY = r"""
     applyBaskerville(bodyStyle, 12);
     bodyStyle.leading      = 15;
     bodyStyle.justification = Justification.LEFT_ALIGN;
+    bodyStyle.spaceAfter   = 6;   // 6pt gap between prose paragraphs
+
+    // Poetry lines are kept as individual InDesign paragraphs (line breaks
+    // preserved) with no extra space between them. The LAST line of each
+    // poetry block uses bodyStyle instead so there's a gap before the
+    // next paragraph.
+    var poetryStyle = doc.paragraphStyles.add();
+    poetryStyle.name = "Poetry";
+    applyBaskerville(poetryStyle, 12);
+    poetryStyle.leading      = 15;
+    poetryStyle.justification = Justification.LEFT_ALIGN;
+    poetryStyle.spaceAfter   = 0;
 
     var pageNumStyle = doc.paragraphStyles.add();
     pageNumStyle.name = "Page Number";
@@ -159,26 +171,65 @@ INDESIGN_SCRIPT_BODY = r"""
         var rawText = textFile.read();
         textFile.close();
 
-        // Plain-text files are often soft-wrapped: each visual line ends with
-        // \n but a real paragraph break is a blank line (\n\n or more).
-        // Passing the raw text to InDesign would turn every soft-wrap into a
-        // paragraph break, producing very short ragged lines.
-        // Fix: normalise line endings, split on blank lines to find real
-        // paragraph boundaries, join within-paragraph newlines as spaces,
-        // then reassemble with InDesign's paragraph separator (\r).
+        // Normalise line endings, then split on blank lines to find real
+        // paragraph / stanza boundaries.
         rawText = rawText.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
-        var paras = rawText.split(/\n{2,}/);
-        var cleaned = [];
-        for (var i = 0; i < paras.length; i++) {
-            var p = paras[i].replace(/\n/g, " ").replace(/  +/g, " ");
-            p = p.replace(/^\s+/, "").replace(/\s+$/, "");
-            if (p.length > 0) cleaned.push(p);
+        var sections = rawText.split(/\n{2,}/);
+
+        // For each blank-line-separated block decide whether it is:
+        //   prose  — no line starts with whitespace → join soft-wraps into
+        //            one InDesign paragraph (bodyStyle, spaceAfter=6pt)
+        //   poetry — at least one line starts with a space or tab → keep
+        //            every line as its own InDesign paragraph (poetryStyle,
+        //            spaceAfter=0), except the last line of the block which
+        //            uses bodyStyle so there is a gap before the next block.
+        var contentParts = [];  // one entry per InDesign paragraph
+        var paraStyles   = [];  // parallel: which style to apply
+
+        for (var si = 0; si < sections.length; si++) {
+            var section = sections[si].replace(/^\s+/, "").replace(/\s+$/, "");
+            if (!section) continue;
+
+            var lines = section.split("\n");
+
+            var isPoetry = false;
+            for (var li = 0; li < lines.length; li++) {
+                if (/^[ \t]/.test(lines[li])) { isPoetry = true; break; }
+            }
+
+            if (isPoetry) {
+                var plines = [];
+                for (var pi = 0; pi < lines.length; pi++) {
+                    var ln = lines[pi].replace(/\s+$/, "");
+                    if (ln.replace(/\s/g, "").length > 0) plines.push(ln);
+                }
+                for (var qi = 0; qi < plines.length; qi++) {
+                    contentParts.push(plines[qi]);
+                    // Last line of a poetry block → bodyStyle (provides the
+                    // gap before the next paragraph); all others → poetryStyle.
+                    paraStyles.push(qi === plines.length - 1 ? bodyStyle : poetryStyle);
+                }
+            } else {
+                var prose = section.replace(/\n/g, " ").replace(/  +/g, " ");
+                prose = prose.replace(/^\s+/, "").replace(/\s+$/, "");
+                if (prose.length > 0) {
+                    contentParts.push(prose);
+                    paraStyles.push(bodyStyle);
+                }
+            }
         }
-        firstFrame.contents = cleaned.join("\r");
+
+        firstFrame.contents = contentParts.join("\r");
+
+        // Apply per-paragraph styles (replaces the blanket everyItem() call).
+        var story = firstFrame.parentStory;
+        for (var xi = 0; xi < paraStyles.length && xi < story.paragraphs.length; xi++) {
+            story.paragraphs[xi].appliedParagraphStyle = paraStyles[xi];
+        }
     } else {
         firstFrame.place(textFile);
+        firstFrame.parentStory.paragraphs.everyItem().appliedParagraphStyle = bodyStyle;
     }
-    firstFrame.parentStory.paragraphs.everyItem().appliedParagraphStyle = bodyStyle;
 
     var frame   = firstFrame;
     var pageNum = 1;    // tracks which page number the current frame is on
