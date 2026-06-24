@@ -327,24 +327,41 @@ INDESIGN_SCRIPT_BODY = r"""
         app.changeGrepPreferences = NothingEnum.nothing;
     }
 
-    // Pad to complete 8-page signatures
-    var sigs   = Math.ceil(doc.pages.length / 8);
-    var target = sigs * 8;
+    // Pad to complete the chosen print composition
+    // sig8 → 8 pages/sig (2 sheets), sig12 → 12 pages/sig (3 sheets),
+    // perfect → 2 pages/leaf (cut sheets, sequential order)
+    var sigSize = (BINDING_MODE === "sig12")   ? 12
+                : (BINDING_MODE === "perfect") ? 2
+                :                                8;
+    var sigs   = Math.ceil(doc.pages.length / sigSize);
+    var target = sigs * sigSize;
     while (doc.pages.length < target) {
         doc.pages.add(LocationOptions.AT_END);
     }
 
-    alert(
-        "Import complete!\n\n" +
-        doc.pages.length + " pages  ·  " + sigs +
-        " signature" + (sigs !== 1 ? "s" : "") + "\n\n" +
-        "Pages are in reading order (1, 2, 3…).\n" +
-        "To impose and print as a saddle-stitched booklet:\n\n" +
-        "  File → Print Booklet → 2-Up Saddle Stitch\n\n" +
-        "InDesign will automatically arrange each 8-page\n" +
-        "signature so the outer sheet carries pp. 1-2 & 7-8\n" +
-        "and the inner sheet carries pp. 3-4 & 5-6."
-    );
+    var completionMsg;
+    if (BINDING_MODE === "perfect") {
+        completionMsg =
+            "Import complete!\n\n" +
+            doc.pages.length + " pages  ·  " + (doc.pages.length / 2) + " leaves\n\n" +
+            "Pages are in reading order (1, 2, 3…).\n\n" +
+            "Print duplex on full sheets, then cut each sheet in half.\n" +
+            "Odd page on front of each leaf, even page on back.\n" +
+            "Stack all leaves and glue the spines for perfect binding.";
+    } else {
+        var sheetsPerSig = sigSize / 4;
+        completionMsg =
+            "Import complete!\n\n" +
+            doc.pages.length + " pages  ·  " + sigs +
+            " signature" + (sigs !== 1 ? "s" : "") +
+            "  ·  " + sheetsPerSig +
+            " sheet" + (sheetsPerSig !== 1 ? "s" : "") + " per signature\n\n" +
+            "Pages are in reading order (1, 2, 3…).\n" +
+            "To impose and print as a saddle-stitched booklet:\n\n" +
+            "  File → Print Booklet → 2-Up Saddle Stitch\n\n" +
+            "InDesign will arrange each " + sigSize + "-page signature automatically.";
+    }
+    alert(completionMsg);
 })();
 """
 
@@ -366,11 +383,12 @@ class TypesetterApp:
     def __init__(self, root: tk.Tk) -> None:
         self.root = root
         self.root.title("Baskerville Typesetter")
-        self.root.geometry("520x430")
+        self.root.geometry("520x510")
         self.root.resizable(False, False)
         self.root.configure(bg=BG)
 
         self._file_path: str = ""
+        self._binding = tk.StringVar(value="sig8")
         self._build_ui()
         self._try_enable_dnd()
 
@@ -428,6 +446,24 @@ class TypesetterApp:
             font=("Courier", 9), fg=FG_DARK, bg=BG,
             wraplength=468, anchor=tk.W, justify=tk.LEFT
         ).pack(anchor=tk.W, pady=(2, 12))
+
+        # Print composition
+        comp_frame = tk.LabelFrame(
+            body, text="  Print Composition  ", font=("Helvetica", 10),
+            bg=BG, fg=FG_DARK, padx=10, pady=8
+        )
+        comp_frame.pack(fill=tk.X, pady=(0, 10))
+
+        for val, label in [
+            ("sig8",    "8-page signatures  (saddle stitch · 2 sheets per signature)"),
+            ("sig12",   "12-page signatures  (saddle stitch · 3 sheets per signature)"),
+            ("perfect", "Perfect binding  (cut sheets into leaves)"),
+        ]:
+            tk.Radiobutton(
+                comp_frame, text=label, variable=self._binding, value=val,
+                font=("Helvetica", 10), bg=BG, fg=FG_DARK,
+                activebackground=BG, selectcolor=BG, anchor=tk.W
+            ).pack(fill=tk.X, pady=1)
 
         # Typeset action buttons — start muted, turn red once a file is chosen
         go_row = tk.Frame(body, bg=BG)
@@ -541,10 +577,12 @@ class TypesetterApp:
             return
 
         jsx_path = self._file_path.replace("\\", "/").replace('"', '\\"')
+        binding  = self._binding.get()
         jsx_content = (
             f'var INPUT_FILE_PATH = "{jsx_path}";\n'
             f'var PUNCT_ONLY_MODE = {"true" if mode == "punct" else "false"};\n'
             f'var PAREN_ONLY_MODE = {"true" if mode == "paren" else "false"};\n'
+            f'var BINDING_MODE    = "{binding}";\n'
             + INDESIGN_SCRIPT_BODY
         )
 
